@@ -1,6 +1,7 @@
 export interface Env {
   EDGE_SIGNING_KEY: string;   // Secret binding (required)
-  ORIGIN_URL: string;         // Origin target
+  ORIGIN_URL: string;         // Origin target (IP allowed)
+  ORIGIN_HOST: string;        // Host header to send
   NONCE_CACHE?: KVNamespace;  // KV binding (optional)
 }
 
@@ -53,7 +54,7 @@ function safeEqual(a: string, b: string): boolean {
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    const { EDGE_SIGNING_KEY, ORIGIN_URL, NONCE_CACHE } = env;
+    const { EDGE_SIGNING_KEY, ORIGIN_URL, ORIGIN_HOST, NONCE_CACHE } = env;
 
     // --- TLS & protocol hygiene ---
     const cf: IncomingRequestCfProperties = (request as any).cf || {};
@@ -158,7 +159,7 @@ export default {
     const jwt = auth.slice(7);
     if (!isValidJwtShape(jwt)) return bad(401, "Malformed JWT");
 
-    // --- Edge assertion (no edge signing, just metadata) ---
+    // --- Edge assertion ---
     const country = (cf.country || "").toUpperCase();
     const asn = Number(cf.asn || 0);
     const clientIp = getHeader(request.headers, "CF-Connecting-IP") || "0.0.0.0";
@@ -187,6 +188,9 @@ export default {
     fwdHeaders.set("X-Edge-Colo", colo);
     fwdHeaders.set("X-Edge-Asserted-At", edgeAssertedAt);
     fwdHeaders.set("X-Edge-Assertion", assertion);
+
+    // Force Host header from env (important when ORIGIN_URL is an IP)
+    fwdHeaders.set("Host", ORIGIN_HOST);
 
     // Strip hop-by-hop headers
     ["Forwarded", "X-Forwarded-Host", "Te", "Trailer", "Transfer-Encoding"].forEach((h) =>
@@ -218,6 +222,3 @@ export default {
     });
   },
 };
-
-
-write curl command to test abive code
